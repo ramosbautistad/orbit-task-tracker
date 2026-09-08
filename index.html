@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simple To-Do List</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main class="app-shell">
+    <header class="app-header">
+      <p class="eyebrow">My tasks</p>
+      <h1>Simple To-Do List</h1>
+      <p>Add a task, check it off, or remove it when it is no longer needed.</p>
+    </header>
+
+    <section class="todo-card" aria-labelledby="todo-heading">
+      <div class="card-heading">
+        <h2 id="todo-heading">Today</h2>
+        <span id="task-count" class="task-count">0 tasks</span>
+      </div>
+
+      <form id="todo-form" class="todo-form" autocomplete="off">
+        <label class="visually-hidden" for="todo-input">New task</label>
+        <input
+          id="todo-input"
+          class="todo-input"
+          type="text"
+          name="todo"
+          placeholder="Add a new task"
+          maxlength="100"
+          required
+        >
+        <button id="add-task-button" class="add-button" type="submit">Add</button>
+      </form>
+
+      <div id="todo-feedback" class="feedback" aria-live="polite"></div>
+
+      <p id="empty-state" class="empty-state">No tasks yet. Add one above to get started.</p>
+      <ul id="todo-list" class="todo-list" aria-label="Tasks"></ul>
+    </section>
+  </main>
+</body>
+</html>

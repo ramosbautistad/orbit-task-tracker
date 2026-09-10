@@ -4,8 +4,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "python3 -m http.server 4173",
+    "dev": "node --watch server/index.js",
+    "start": "node server/index.js",
     "build": "sh scripts/build.sh",
-    "test": "bun test tests"
+    "migrate": "node server/db/migrate.js",
+    "seed:dev": "node server/db/seed-development.js",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "pg": "^8.23.0"
   }
 }

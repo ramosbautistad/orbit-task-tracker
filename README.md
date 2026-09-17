@@ -1,52 +1,119 @@
 # Orbit
 
-Orbit is a focused team task manager for managers and employees. Managers can assign and manage work across teams; employees see only their assigned work and can move it through the workflow.
+Orbit is a team task manager for managers and employees. The current branch adds the first Railway/PostgreSQL backend: durable organization data, teams, employees, tasks, secure server-side sessions, and role-based API permissions.
 
-## Run locally
-
-Serve the directory over HTTP so the browser can load the JavaScript modules:
-
-```bash
-python3 -m http.server 4173
-```
-
-Open `http://localhost:4173`. Choose any demo account and use `demo123` as the password.
-
-## Product architecture
+## How the pieces fit together
 
 ```text
-index.html                         Application shell and accessible controls
-styles.css                        Product design system and responsive layouts
-app.js                            Composition root; wires adapters to the UI
-src/
-  data/seed.js                    Demo organization, teams, users, and tasks
-  domain/policies.js              Role permissions and task validation
-  infrastructure/
-    demo-auth-service.js          Replaceable demo identity adapter
-    local-workspace-repository.js Replaceable local data adapter
-  ui/app-controller.js            UI state, rendering, and user workflows
-tests/policies.test.mjs           Permission and validation tests
+Browser ──HTTPS──> Node/Express service ──DATABASE_URL──> Railway PostgreSQL
+                  serves Orbit + API                       stores durable data
 ```
 
-The UI depends on small authentication and repository contracts rather than accessing browser storage itself. That boundary keeps the current prototype dependency-free while allowing production infrastructure to replace the demo adapters.
+Only the Node service knows `DATABASE_URL`. Never put that value in browser JavaScript, commit it, or expose it through a public environment variable.
 
-## Permission model
+## Database model
 
-- A manager can see all tasks in their organization and create, edit, assign, delete, or update them.
-- An employee can see only tasks assigned to them and update only those tasks' statuses.
-- Every user and task belongs to an organization. This prevents records from different customer workspaces from being mixed when server-side authorization is added.
+- `organizations`: customer workspaces; every business record is scoped to one.
+- `teams`: groups inside an organization.
+- `users`: managers and employees, with salted scrypt password hashes.
+- `tasks`: assignments with team, assignee, creator, status, priority, and due date.
+- `sessions`: hashes of opaque login tokens; the raw token exists only in an HttpOnly cookie.
+- `invitations`: foundation for email-based employee onboarding.
+- `task_events`: an audit trail retained even after a task is deleted.
+- `schema_migrations`: records which SQL migrations have run.
 
-## Production path
+The schema uses composite foreign keys to prevent a task from pointing to an employee or team in another organization. Important task access patterns have indexes.
 
-The current login and storage are intentionally a local demo. They are not secure multi-user authentication.
+## Local setup
 
-For production, keep the domain and UI layers and replace the two infrastructure adapters with authenticated API implementations. The server should enforce the same policies on every mutation and use durable relational storage with these core entities:
+1. Copy `.env.example` to `.env` and use a local PostgreSQL connection string.
+2. Export the variables into your shell or use your preferred environment loader.
+3. Run the migration and create the first workspace manager:
 
-- `organizations(id, name)`
-- `teams(id, organization_id, name)`
-- `users(id, organization_id, team_id, role, name, email)`
-- `tasks(id, organization_id, team_id, assignee_id, created_by_id, title, description, due_date, priority, status, created_at, updated_at)`
+```bash
+npm run migrate
+npm run seed:dev
+```
 
-Recommended indexes are tasks by `(organization_id, status)`, `(assignee_id, status)`, and `(team_id, due_date)`. Add audit events for task assignment and status changes before introducing notifications or reporting.
+4. Build and start Orbit:
 
-Authentication should use a managed identity provider or server-issued secure sessions. Passwords must never be stored or checked in browser JavaScript. Authorization belongs on the server; hiding controls in the interface is only a usability measure.
+```bash
+npm run build
+npm start
+```
+
+Open `http://localhost:4173`.
+
+## Railway setup
+
+Create or select two services in one Railway project:
+
+1. A PostgreSQL service.
+2. An application service connected to this repository.
+
+On the application service, reference the Postgres service variables rather than copying a public database URL:
+
+```text
+DATABASE_URL=${{Postgres.DATABASE_URL}}
+NODE_ENV=production
+DATABASE_SSL=false
+RUN_MIGRATIONS=true
+SESSION_TTL_DAYS=7
+```
+
+Set the bootstrap variables temporarily, run `npm run seed:dev` once, then remove the password variable:
+
+```text
+ORBIT_BOOTSTRAP_ORGANIZATION=Your Company
+ORBIT_BOOTSTRAP_SLUG=your-company
+ORBIT_BOOTSTRAP_MANAGER_NAME=Your Name
+ORBIT_BOOTSTRAP_MANAGER_EMAIL=you@company.com
+ORBIT_BOOTSTRAP_MANAGER_PASSWORD=a-long-one-time-password
+```
+
+Recommended Railway commands:
+
+```text
+Build: npm run build
+Start: npm start
+Health check: /api/health
+```
+
+For a production workflow, run `npm run migrate` as Railway's pre-deploy command and leave `RUN_MIGRATIONS=false` during normal application startup. It avoids every app replica attempting migrations during a scale-up.
+
+## API surface
+
+```text
+POST   /api/auth/login
+GET    /api/auth/me
+DELETE /api/auth/session
+GET    /api/bootstrap
+GET    /api/tasks
+POST   /api/tasks                 manager only
+PATCH  /api/tasks/:taskId         employee status or manager changes
+DELETE /api/tasks/:taskId         manager only
+POST   /api/employees             manager only
+GET    /api/health
+```
+
+All SQL values from requests use parameterized queries. Authorization is checked by the server and every query is scoped by `organization_id`; hiding a button in the frontend is not treated as security.
+
+## Project structure
+
+```text
+db/migrations/                  Versioned PostgreSQL schema
+server/
+  db/                           Connection, migrations, and development seed
+  lib/                          Passwords, sessions, validation, serializers
+  middleware/                   Authentication and manager authorization
+  repositories/                 Parameterized PostgreSQL queries
+  routes/                       HTTP endpoints
+  app.js                        Express application assembly
+  index.js                      Process startup and graceful shutdown
+src/                            Existing browser application
+tests/                          Domain and server security tests
+```
+
+## Current integration boundary
+
+The database and API are ready on this branch, while the existing browser interface still uses its local demo adapters. The next slice replaces those adapters with `/api` implementations and changes the demo account picker into an email/password login. Keeping that as a separate step makes the database migration easy to inspect and learn before the UI starts writing live data.
